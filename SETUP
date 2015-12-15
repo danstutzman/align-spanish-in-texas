@@ -34,6 +34,8 @@ fi
 cd sphinx4
 sudo apt-get install -y ruby
 ruby -i -pe "gsub /^\s+tuple.add\(it.next\(\)\);/, 'if (it.hasNext()) { tuple.add(it.next()); }'" sphinx4-core/src/main/java/edu/cmu/sphinx/alignment/LongTextAligner.java
+ruby -i -pe 'gsub /^\s+<item>speedTracker<\/item>$/, "<!--<item>speedTracker</item>-->"' ./sphinx4-core/src/main/resources/edu/cmu/sphinx/api/default.config.xml
+ruby -i -pe 'gsub /^\s+<item>memoryTracker<\/item>$/, "<!--<item>memoryTracker</item>-->"' ./sphinx4-core/src/main/resources/edu/cmu/sphinx/api/default.config.xml
 sudo apt-get install -y gradle
 gradle jar
 cd
