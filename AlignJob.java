@@ -1,6 +1,7 @@
 import edu.cmu.sphinx.alignment.LongTextAligner;
 import edu.cmu.sphinx.api.SpeechAligner;
 import edu.cmu.sphinx.result.WordResult;
+import edu.cmu.sphinx.util.TimeFrame;
 import java.util.concurrent.Callable;
 import java.lang.ProcessBuilder;
 import java.lang.Process;
@@ -13,32 +14,35 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
-public class AlignJob implements Callable<Integer> {
+public class AlignJob implements Callable<List<WordResult>> {
   public String wavPath;
   public int utteranceNum;
   public int beginMillis;
   public int endMillis;
   public String transcription;
 
-  public Integer call() {
+  public List<WordResult> call() {
     String beginTiming = String.format("%02d:%02d:%02d.%03d",
       this.beginMillis / 3600000,
       (this.beginMillis % 3600000) / 60000,
       (this.beginMillis % 60000) / 1000,
       this.beginMillis % 1000);
-    String endTiming = String.format("%02d:%02d:%02d.%03d",
-      this.endMillis / 3600000,
-      (this.endMillis % 3600000) / 60000,
-      (this.endMillis % 60000) / 1000,
-      this.endMillis % 1000);
+    int durationMillis = this.endMillis - this.beginMillis;
+    String durationTiming = String.format("%02d:%02d:%02d.%03d",
+      durationMillis / 3600000,
+      (durationMillis % 3600000) / 60000,
+      (durationMillis % 60000) / 1000,
+      durationMillis % 1000);
 
-    String excerptWavPath = "" + utteranceNum + ".wav";
+    new File("tmp").mkdir();
+
+    String excerptWavPath = "tmp/" + utteranceNum + ".wav";
     StringBuilder soxOutput = new StringBuilder();
     Process process;
     try {
       process = new ProcessBuilder().inheritIO().command(
         "/usr/bin/sox", this.wavPath, "-r", "16000", excerptWavPath, "trim",
-        beginTiming, endTiming).start();
+        beginTiming, durationTiming).start();
       BufferedReader reader =
         new BufferedReader(new InputStreamReader(process.getInputStream()));
       while (true) {
@@ -65,7 +69,7 @@ public class AlignJob implements Callable<Integer> {
     }
 
     try {
-      String excerptTxtPath = "" + utteranceNum + ".txt";
+      String excerptTxtPath = "tmp/" + utteranceNum + ".txt";
       FileWriter writer = new FileWriter(excerptTxtPath);
       writer.write(this.transcription);
       writer.write("\n");
@@ -73,7 +77,6 @@ public class AlignJob implements Callable<Integer> {
     } catch (java.io.IOException e) {
       throw new RuntimeException(e);
     }
-
     
     try {
       URL audioUrl = new File(excerptWavPath).toURI().toURL();
@@ -84,57 +87,25 @@ public class AlignJob implements Callable<Integer> {
       SpeechAligner aligner =
         new SpeechAligner(acousticModelPath, dictionaryPath, g2pPath);
 
-      List<WordResult> results = aligner.align(audioUrl, this.transcription);
-      List<String> stringResults = new ArrayList<String>();
-      for (WordResult wr : results) {
-        stringResults.add(wr.getWord().getSpelling());
+      List<WordResult> resultsRelative = aligner.align(audioUrl, this.transcription);
+
+      List<WordResult> results = new ArrayList<WordResult>();
+      for (WordResult wordRelative : resultsRelative) {
+        TimeFrame newTimeFrame = new TimeFrame(
+          wordRelative.getTimeFrame().getStart() + this.beginMillis,
+          wordRelative.getTimeFrame().getEnd()   + this.beginMillis);
+        results.add(new WordResult(
+          wordRelative.getWord(),
+          newTimeFrame,
+          wordRelative.getScore(),
+          wordRelative.getConfidence()));
       }
 
-      LongTextAligner textAligner = new LongTextAligner(stringResults, 2);
-      List<String> sentences = aligner.getTokenizer().expand(this.transcription);
-      List<String> words = aligner.sentenceToWords(sentences);
-      int[] aid = textAligner.align(words);
-
-      int lastId = -1;
-      for (int i = 0; i < aid.length; ++i) {
-        if (aid[i] == -1) {
-          System.out.format("- %s\n", words.get(i));
-        } else {
-          if (aid[i] - lastId > 1) {
-            for (WordResult result : results.subList(lastId + 1, aid[i])) {
-              System.out.format("+ %-25s [%s]\n", result.getWord()
-                .getSpelling(), result.getTimeFrame());
-            }
-          }
-          System.out.format("  %-25s [%s]\n", results.get(aid[i])
-              .getWord().getSpelling(), results.get(aid[i])
-              .getTimeFrame());
-          lastId = aid[i];
-        }
-      }
-
-      if (lastId >= 0 && results.size() - lastId > 1) {
-        for (WordResult result : results.subList(lastId + 1,
-            results.size())) {
-          System.out.format("+ %-25s [%s]\n", result.getWord()
-            .getSpelling(), result.getTimeFrame());
-        }
-      }
-
+      return results;
     } catch (java.net.MalformedURLException e) {
       throw new RuntimeException(e);
     } catch (java.io.IOException e) {
       throw new RuntimeException(e);
     }
-
-/*
-      './sphinx4/sphinx4-samples/build/libs/sphinx4-samples-5prealpha-SNAPSHOT.jar',
-      'edu.cmu.sphinx.demo.aligner.AlignerDemo',
-      'excerpt.wav',
-      'excerpt.txt',
-      'voxforge-es-0.2/etc/voxforge_es_sphinx.dic']
-*/
-
-    return 0;
   }
 }

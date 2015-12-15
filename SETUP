@@ -52,11 +52,25 @@ echo 'houses j a u s e s' >> voxforge-es-0.2/etc/voxforge_es_sphinx.dic
 
 #time ruby align.rb 2>&1 | tee align.log
 
-javac -cp \
-  .:sphinx4/sphinx4-samples/build/libs/sphinx4-samples-5prealpha-SNAPSHOT.jar \
-  AlignAll.java
-time java -cp \
-  .:sphinx4/sphinx4-samples/build/libs/sphinx4-samples-5prealpha-SNAPSHOT.jar \
-  AlignAll *.vtt 2>&1 | tee align.log
+if [ ! -e JSON-java ]; then
+  git clone https://github.com/douglascrockford/JSON-java.git
+  cd JSON-java
+  javac *.java
+  mkdir -p org/json
+  mv *.class org/json
+  cd
+fi
+
+if [ ! -e commons-cli-1.3.1 ]; then
+  curl http://www.eu.apache.org/dist//commons/cli/binaries/commons-cli-1.3.1-bin.tar.gz > commons-cli-1.3.1-bin.tar.gz
+  tar xvzf commons-cli-1.3.1-bin.tar.gz
+fi
+
+CP=.
+CP=$CP:sphinx4/sphinx4-samples/build/libs/sphinx4-samples-5prealpha-SNAPSHOT.jar
+CP=$CP:JSON-java
+CP=$CP:commons-cli-1.3.1/commons-cli-1.3.1.jar
+javac -cp $CP AlignAll.java
+time java -cp $CP AlignAll -num_threads 4 *.vtt 2>&1 | tee align.log
 
 EOF
