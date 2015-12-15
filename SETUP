@@ -1,0 +1,62 @@
+Run once per project:
+gcloud compute firewall-rules create mosh --allow udp:60001-60010
+
+Run once per workstation:
+gcloud config set compute/zone us-central1-b
+gcloud config set project speech-danstutzman
+---------------------
+
+gcloud compute instances create speech \
+  --image ubuntu-15-10 \
+  --machine-type n1-highcpu-4 \
+  --preemptible
+
+#gcloud compute ssh speech 'sudo shutdown +2400 -P'
+
+gcloud compute ssh speech 'sudo apt-get install -y mosh'
+
+#gcloud compute copy-files align.rb speech:align.rb
+gcloud compute copy-files AlignAll.java speech:AlignAll.java
+gcloud compute copy-files AlignJob.java speech:AlignJob.java
+
+gcloud compute ssh speech <<EOF
+set -ex
+
+sudo apt-get install -y python-software-properties debconf-utils
+sudo add-apt-repository ppa:webupd8team/java
+sudo apt-get update
+echo "oracle-java8-installer shared/accepted-oracle-license-v1-1 select true" | sudo debconf-set-selections
+sudo apt-get install -y oracle-jdk7-installer
+
+if [ ! -e sphinx4 ]; then
+  git clone http://github.com/cmusphinx/sphinx4
+fi
+cd sphinx4
+sudo apt-get install -y ruby
+ruby -i -pe "gsub /^\s+tuple.add\(it.next\(\)\);/, 'if (it.hasNext()) { tuple.add(it.next()); }'" sphinx4-core/src/main/java/edu/cmu/sphinx/alignment/LongTextAligner.java
+sudo apt-get install -y gradle
+gradle jar
+cd
+
+curl http://corpus.spanishintexas.org/corpus/wav/AM001_1925_EP_SU2011_AD.wav > AM001_1925_EP_SU2011_AD.wav
+sudo apt-get install -y sox
+curl -L "http://sourceforge.net/projects/cmusphinx/files/Acoustic%20and%20Language%20Models/Spanish%20Voxforge/voxforge-es-0.2.tar.gz/download" > voxforge-es-0.2.tar.gz
+tar xvzf voxforge-es-0.2.tar.gz
+
+curl http://corpus.spanishintexas.org/corpus/vtt/AM001_1925_EP_SU2011_AD.vtt > AM001_1925_EP_SU2011_AD.vtt
+
+echo 'creciste k r e s i s t e' >> voxforge-es-0.2/etc/voxforge_es_sphinx.dic
+echo 'three z r i' >> voxforge-es-0.2/etc/voxforge_es_sphinx.dic
+echo 'four f o a' >> voxforge-es-0.2/etc/voxforge_es_sphinx.dic
+echo 'houses j a u s e s' >> voxforge-es-0.2/etc/voxforge_es_sphinx.dic
+
+#time ruby align.rb 2>&1 | tee align.log
+
+javac -cp \
+  .:sphinx4/sphinx4-samples/build/libs/sphinx4-samples-5prealpha-SNAPSHOT.jar \
+  AlignAll.java
+time java -cp \
+  .:sphinx4/sphinx4-samples/build/libs/sphinx4-samples-5prealpha-SNAPSHOT.jar \
+  AlignAll *.vtt 2>&1 | tee align.log
+
+EOF
